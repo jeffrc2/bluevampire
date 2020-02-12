@@ -7,12 +7,14 @@ import Vector::*;
 import Float32::*;
 import Float64::*;
 
+typedef TLog#(len) CountLen#(numeric type len);
+
 typedef enum {INIT, DIFF} DiffState deriving(Bits,Eq);
 
-interface DiffIfc;
+interface DiffIfc#(numeric type datalen);
 //INIT
+	method Action setTotal(Bit#(CountLen#(datalen)) tot);
 	method Action put(Bit#(64) data);
-	method Action setTotal(Bit#(20) tot);
 	method Action start;
 //SUMMATE
 	method Bool hasDiff;
@@ -20,15 +22,15 @@ interface DiffIfc;
     method ActionValue#(Bit#(64)) get;
 endinterface
 
-module mkDiff(DiffIfc);
+module mkDiff(DiffIfc#(datalen));
 
 	Reg#(Bit#(64)) prev <- mkReg(0);
 	
-	FIFOF#(Bit#(64)) diffQ <- mkSizedFIFOF(200000);
+	FIFOF#(Bit#(64)) diffQ <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
 	
-	FIFOF#(Bit#(64)) outQ <- mkSizedFIFOF(199999);
+	FIFOF#(Bit#(64)) outQ <- mkSizedFIFOF(fromInteger(valueOf(datalen)) - 1);
 	
-	Reg#(Bit#(20)) total <- mkReg(200000);
+	//Reg#(Bit#(CountLen#(datalen))) total <- mkReg(200000);
 	
 	Clock curClk <- exposeCurrentClock;
 	Reset curRst <- exposeCurrentReset;
@@ -36,7 +38,9 @@ module mkDiff(DiffIfc);
 	FpPairIfc#(64) sub <- mkFpSub64(clocked_by curClk, reset_by curRst);
 	
 	Reg#(Bool) diffFlag <- mkReg(False);
-	Reg#(Bit#(20)) count <- mkReg(0);
+	
+	Reg#(Bit#(CountLen#(datalen))) total <- mkReg(fromInteger(valueOf(datalen)));
+	Reg#(Bit#(CountLen#(datalen))) count <- mkReg(0);
 	Reg#(DiffState) diffState <- mkReg(INIT);
 	Reg#(Bool) diffDone <- mkReg(False);
 	
@@ -59,7 +63,7 @@ module mkDiff(DiffIfc);
 		count <= count + 1;
 	endrule
 	
-	rule endDiff(diffState == DIFF && count == total);
+	rule endDiff(diffState == DIFF && count == fromInteger(valueOf(datalen)));
 		diffDone <= True;
 		diffState <= INIT;
 		count <= 0;
@@ -67,6 +71,10 @@ module mkDiff(DiffIfc);
 	
 	method Bool hasDiff;
 		return diffDone;
+	endmethod
+	
+	method Action setTotal(Bit#(CountLen#(datalen)) tot);
+		total <= tot;
 	endmethod
 	
 	method Action put(Bit#(64) data);

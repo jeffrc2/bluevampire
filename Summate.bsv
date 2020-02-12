@@ -9,12 +9,16 @@ import BRAMFIFO::*;
 import Float32::*;
 import Float64::*;
 
+//`define SUMMATE_DEBUG
+
+typedef TAdd#(TLog#(len),1) CountPlusPlusLen#(numeric type len);
+
 typedef enum {INIT, SUMMATE} SummateState deriving(Bits,Eq);
 
-interface SummateIfc;
+interface SummateIfc#(numeric type datalen);
 //INIT
 	method Action put(Bit#(64) data);
-	method Action setTotal(Bit#(20) tot);
+	method Action setTotal(Bit#(CountPlusPlusLen#(datalen)) tot);
 	method Action start;
 //SUMMATE
 	method Bool hasSum;
@@ -22,20 +26,20 @@ interface SummateIfc;
 	method Action clear();
 endinterface
 
-module mkSummate(SummateIfc);
+module mkSummate(SummateIfc#(datalen));
 
 	Clock curClk <- exposeCurrentClock;
 	Reset curRst <- exposeCurrentReset;
 
 	FpPairIfc#(64) add <- mkFpAdd64(clocked_by curClk, reset_by curRst);
 	
-	FIFOF#(Bit#(64)) sumQ <- mkSizedFIFOF(200000);
+	FIFOF#(Bit#(64)) sumQ <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
 	
 	Reg#(Bit#(64)) sumOperand <- mkReg(0);
 	Reg#(Bool) sumOpFlag <- mkReg(False);
 	
-	Reg#(Bit#(20)) count <- mkReg(0);
-	Reg#(Bit#(20)) total <- mkReg(200000);
+	Reg#(Bit#(CountPlusPlusLen#(datalen))) count <- mkReg(0);
+	Reg#(Bit#(CountPlusPlusLen#(datalen))) total <- mkReg(fromInteger(valueOf(datalen)));
 	
 	Reg#(Bool) addQueued <- mkReg(False);
 	
@@ -51,14 +55,21 @@ module mkSummate(SummateIfc);
 				//fill operand
 				sumOperand <= op;
 				if (count != total -1) begin
-					//$display( "Saving Temp Operand. \n");
+`ifdef SUMMATE_DEBUG
+					$display( "Saving Temp Operand. %b\n", op);
+`endif
 					sumOpFlag <= True;
 				end else begin
-					//$display("Final Sum value: %b \n", op);
 					sumDone <= True;
+`ifdef SUMMATE_DEBUG
+					$display("Final Sum value: %b \n", op);
+					$display("Summate Complete.\n");
+`endif
 				end
 			end else begin
-				//$display( "Adding Operands. \n");
+`ifdef SUMMATE_DEBUG
+				$display( "Adding Operands %b %b", sumOperand, op);
+`endif
 				add.enq(sumOperand, op);
 				sumOpFlag <= False;
 				addQueued <= True;
@@ -72,28 +83,28 @@ module mkSummate(SummateIfc);
 	rule sumRecursion(sumState == SUMMATE && addQueued && !sumDone);
 		Bit#(64) val = add.first;
 		add.deq;
-		//$display( "Addition op no. %d", count);
-		//$display( "Added Binary Value: %b \n", val);
 		count <= count + 1;
 		sumQ.enq(val);
 		addQueued <= False;
+`ifdef SUMMATE_DEBUG
+		$display( "Addition op no. %d", count);
+		$display( "Added Binary Value: %b \n", val);
+`endif
 	endrule	
 	
-	method Action setTotal(Bit#(20) tot);
+	method Action setTotal(Bit#(CountPlusPlusLen#(datalen)) tot);
 		total <= tot;
 	endmethod
 	
 	method Action put(Bit#(64) data);
-		if (sumState == INIT) begin
-			sumQ.enq(data);
-		end else begin
-			$display( "Illegal put. \n");
-			$finish(1);
-		end
+		sumQ.enq(data);
 	endmethod
 	
 	method Action start;
 		sumState <= SUMMATE;
+`ifdef SUMMATE_DEBUG
+		$display( "Starting Summate.\n");
+`endif
 	endmethod
 	
 	method Bool hasSum();
@@ -112,10 +123,7 @@ module mkSummate(SummateIfc);
 		sumState <= INIT;
 		sumDone <= False;
 		count <= 0;
-		total <= 200000;
+		total <= fromInteger(valueOf(datalen));
 	endmethod
-	
-
-	
 	
 endmodule:mkSummate

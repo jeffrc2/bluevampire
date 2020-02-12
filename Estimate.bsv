@@ -3,30 +3,32 @@ import Connectable::*;
 import FIFOF::*;
 import FIFO::*;
 import Vector::*;
-//
+
+
+//bluevampire library
 import DotProduct::*;
 import Float32::*;
 import Float64::*;
 
-//
+//bluespec library
 import FloatingPoint::*;
 
+typedef TLog#(len) CountLen#(numeric type len);
 
 typedef enum {INIT, CHECK, PROCESS, DIV} EstimateState deriving(Bits,Eq);
 
-interface EstimateIfc;
+interface EstimateIfc#(numeric type datalen);
 //INIT
-	method Action setTotal(Bit#(20) intTot, Bit#(64) dblTot);
 	method Action put(Bit#(64) data);
 	method Action start;
 	method Bool hasEst();
 	method ActionValue#(Bit#(64)) get;
-	method Action clear;
+	method Bit#(CountLen#(datalen)) getNewTotal;
 	
 	method Action loadAxis(Bit#(64) inc);
 endinterface
 
-module mkEstimate(EstimateIfc);
+module mkEstimate(EstimateIfc#(datalen));
 	Reg#(EstimateState) estState <- mkReg(INIT);
 		
 	Clock curClk <- exposeCurrentClock;
@@ -36,16 +38,16 @@ module mkEstimate(EstimateIfc);
 	FpPairIfc#(64) add <- mkFpAdd64(clocked_by curClk, reset_by curRst);
 	FpPairIfc#(64) div <- mkFpDiv64(clocked_by curClk, reset_by curRst);
 	
-	FIFOF#(Bit#(64)) outQ <- mkSizedFIFOF(200000);
-	FIFOF#(Bit#(64)) timeQ <- mkSizedFIFOF(200000);
-	FIFOF#(Bit#(64)) estQ <- mkSizedFIFOF(200000);
+	FIFOF#(Bit#(64)) outQ <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
+	FIFOF#(Bit#(64)) timeQ <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
+	FIFOF#(Bit#(64)) estQ <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
 	
 
 	Vector#(2, Reg#(Bit#(64))) numVecA <- replicateM(mkReg(0));
 	Vector#(2, Reg#(Bit#(64))) numVecB <- replicateM(mkReg(0));
-	Reg#(Bit#(20)) count <- mkReg(0);
-	Reg#(Bit#(20)) subcount <- mkReg(0);
-	Reg#(Bit#(20)) total <- mkReg(200000);
+	Reg#(Bit#(CountLen#(datalen))) count <- mkReg(0);
+	Reg#(Bit#(CountLen#(datalen))) subcount <- mkReg(0);
+	//Reg#(Bit#(CountLen#(datalen))) total <- mkReg(fromInteger(valueOf(datalen)));
 	
 	Reg#(Bool) estDone <- mkReg(False);
 	
@@ -66,14 +68,13 @@ module mkEstimate(EstimateIfc);
 		return val;
 	endfunction
 	
-	rule startCheck(estState == CHECK && !checkFlag && count < total );
+	rule startCheck(estState == CHECK && !checkFlag && count < fromInteger(valueOf(datalen)) );
 		timeQ.deq;
 		Bit#(64) inc = timeQ.first;
 		estQ.deq;
 		Bit#(64) val = estQ.first;
 		Double cur = convertBit2Dbl(val);
 		Double pre = convertBit2Dbl(prev);
-		count <= count + 1;
 		Bit#(64) zero = 0;
 		Double cp = convertBit2Dbl(zero);
 		if (count > 0) begin
@@ -88,6 +89,7 @@ module mkEstimate(EstimateIfc);
 		end
 		prev <= val;
 		past <= inc;
+		count <= count + 1;
 	endrule
 	
 	rule startProcess(estState == CHECK && checkFlag);
@@ -114,12 +116,10 @@ module mkEstimate(EstimateIfc);
 		estState <= CHECK;
 	endrule
 	
-	rule endEst(estState == CHECK && !checkFlag && count == total);
+	rule endEst(estState == CHECK && !checkFlag && count == fromInteger(valueOf(datalen)));
 		estState <= INIT;
 		estDone <= True;
 	endrule
-	
-
 	
 	method Action put(Bit#(64) data);
 		estQ.enq(data);
@@ -138,6 +138,10 @@ module mkEstimate(EstimateIfc);
         outQ.deq;
         return outQ.first;
     endmethod
+	
+	method Bit#(CountLen#(datalen)) getNewTotal;
+		return subcount;
+	endmethod
 	
 	method Action loadAxis(Bit#(64) inc);
 		timeQ.enq(inc);

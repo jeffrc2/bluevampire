@@ -7,11 +7,14 @@ import Vector::*;
 import Float32::*;
 import Float64::*;
 
+typedef TLog#(len) CountLen#(numeric type len);
+
 typedef enum {INIT, DIV} RDivideScalarState deriving(Bits,Eq);
 
-interface RDivideScalarIfc;
+interface RDivideScalarIfc#(numeric type datalen);
 //INIT
 	method Action put(Bit#(64) data);
+	method Action setTotal(Bit#(CountLen#(datalen)) tot);
 	method Action setScalar(Bit#(64) scalar, Bool position);
 	method Action start;
 //SUMMATE
@@ -19,25 +22,25 @@ interface RDivideScalarIfc;
     method ActionValue#(Bit#(64)) get;
 endinterface
 
-module mkRDivideScalar(RDivideScalarIfc);
+module mkRDivideScalar(RDivideScalarIfc#(datalen));
 
 	Reg#(Bit#(64)) rDivScalar <- mkReg(0);
 	
-	FIFOF#(Bit#(64)) rdivQ <- mkSizedFIFOF(199999);
+	FIFOF#(Bit#(64)) rdivQ <- mkSizedFIFOF(fromInteger(valueOf(datalen))-1);
 	
-	FIFOF#(Bit#(64)) outQ <- mkSizedFIFOF(199999);
-	
-	Reg#(Bit#(20)) total <- mkReg(199999);
+	FIFOF#(Bit#(64)) outQ <- mkSizedFIFOF(fromInteger(valueOf(datalen))-1);
+
 	
 	Clock curClk <- exposeCurrentClock;
 	Reset curRst <- exposeCurrentReset;
 	
 	Reg#(Bool) numDen <- mkReg(False);
 	
-	FpPairIfc#(64) div <- mkFpSub64(clocked_by curClk, reset_by curRst);
+	FpPairIfc#(64) div <- mkFpDiv64(clocked_by curClk, reset_by curRst);
 	
 	Reg#(Bool) divFlag <- mkReg(False);
-	Reg#(Bit#(20)) count <- mkReg(0);
+	Reg#(Bit#(CountLen#(datalen))) total <- mkReg(fromInteger(valueOf(datalen))-1);
+	Reg#(Bit#(CountLen#(datalen))) count <- mkReg(0);
 	Reg#(RDivideScalarState) divState <- mkReg(INIT);
 	Reg#(Bool) rdivDone <- mkReg(False);
 	
@@ -55,6 +58,7 @@ module mkRDivideScalar(RDivideScalarIfc);
 	rule endDiv(divState == DIV && divFlag);
 		Bit#(64) val = div.first;
 		div.deq;
+		outQ.enq(val);
 		divFlag <= False;
 		count <= count + 1;
 	endrule
@@ -68,6 +72,10 @@ module mkRDivideScalar(RDivideScalarIfc);
 	method Action setScalar(Bit#(64) scalar, Bool position);
 		rDivScalar <= scalar;
 		numDen <= position;
+	endmethod
+	
+	method Action setTotal(Bit#(CountLen#(datalen)) tot);
+		total <= tot-1;
 	endmethod
 	
 	method Action put(Bit#(64) data);

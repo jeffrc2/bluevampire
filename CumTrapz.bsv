@@ -14,34 +14,35 @@ import BRAMFIFO::*;
 import Float32::*;
 import Float64::*;
 
+typedef TLog#(len) CountLen#(numeric type len);
+
 typedef enum {INIT, ADD, DIV, CUM} CumTrapzState deriving(Bits,Eq);
 
-interface CumTrapzIfc;
+interface CumTrapzIfc#(numeric type datalen);
 //INIT
-	method Action setTotal(Bit#(20) intTot, Bit#(64) dblTot);
 	method Action put(Bit#(64) data);
 	method Action start;
 	method Bool hasCum();
 	method ActionValue#(Bit#(64)) get;
 endinterface
 
-module mkCumTrapz(CumTrapzIfc);
+module mkCumTrapz(CumTrapzIfc#(datalen));
 	Clock curClk <- exposeCurrentClock;
 	Reset curRst <- exposeCurrentReset;
 
 	FpPairIfc#(64) add <- mkFpAdd64(clocked_by curClk, reset_by curRst);
 	FpPairIfc#(64) div <- mkFpDiv64(clocked_by curClk, reset_by curRst);
-	Reg#(Bit#(20)) total <- mkReg(200000);
+	Reg#(Bit#(CountLen#(datalen))) total <- mkReg(fromInteger(valueOf(datalen)));
 	
 	Reg#(CumTrapzState) cumState <- mkReg(INIT);
 	
-	FIFOF#(Bit#(64)) cumQ <- mkSizedFIFOF(200000);
-	FIFOF#(Bit#(64)) outQ <- mkSizedFIFOF(200000);
+	FIFOF#(Bit#(64)) cumQ <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
+	FIFOF#(Bit#(64)) outQ <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
 	
 	Reg#(Bit#(64)) prev <- mkReg(0);
 	Reg#(Bit#(64)) cum <- mkReg(0);
 	
-	Reg#(Bit#(20)) count <- mkReg(0);
+	Reg#(Bit#(CountLen#(datalen))) count <- mkReg(0);
 	Reg#(Bool) addQueued <- mkReg(False);
 	Reg#(Bool) cumDone <- mkReg(False);
 	
@@ -91,7 +92,6 @@ module mkCumTrapz(CumTrapzIfc);
 		count <= count + 1;
 		cumState <= ADD;
 	endrule
-	
 	
 	method Action start;
 		$display( "Starting Cumulative Trapezoidal Numerical Integration. \n");

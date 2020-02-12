@@ -1,4 +1,4 @@
-BSCFLAGS = -show-schedule -aggressive-conditions --wait-for-license 
+BSCFLAGS = -show-schedule -aggressive-conditions --wait-for-license -show-range-conflict 
 BSCFLAGS_BSIM = -bdir ./bsim/obj -simdir ./bsim/obj -info-dir ./bsim -fdir ./bsim -D BSIM
 BSVPATH=bluelib/src/
 CPPFILES=bdpi.cpp

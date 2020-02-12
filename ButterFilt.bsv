@@ -11,38 +11,38 @@ import Filter::*;
 typedef 5 FilterALen;
 typedef 5 FilterBLen;
 
+typedef TLog#(len) CountLen#(numeric type len);
+
 typedef enum {INIT, FILTER} ButterState deriving(Bits,Eq);
 
-interface ButterFiltIfc;
+interface ButterFiltIfc#(numeric type datalen);
 //INIT
-	method Action setTotal(Bit#(20) intTot);
 	method Action put(Bit#(64) data);
 	method Action start;
 	method Bool hasButter;
 	method ActionValue#(Bit#(64)) get;
 endinterface
 
-module mkButterFilt(ButterFiltIfc);
-
+module mkButterFilt(ButterFiltIfc#(datalen));
 
 	Reg#(ButterState) butterState <- mkReg(INIT);
-	FilterIfc#(FilterALen, FilterBLen) filter <- mkFilter;
-	FIFOF#(Bit#(64)) butterQ <- mkSizedFIFOF(200000);
+	FilterIfc#(datalen, FilterALen, FilterBLen) filter <- mkFilter;
+	FIFOF#(Bit#(64)) butterQ <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
 	
-	Reg#(Bit#(20)) bitTotal <- mkReg(200000);
-	Reg#(Bit#(20)) count <- mkReg(0);
+	//Reg#(Bit#(CountLen#(datalen))) bitTotal <- mkReg(fromInteger(valueOf(datalen)));
+	Reg#(Bit#(CountLen#(datalen))) count <- mkReg(0);
 	
 	Reg#(Bool) filterQueued <- mkReg(False);
 	Reg#(Bool) butterDone <- mkReg(False);
 	
-	rule filterRelay(butterState == FILTER && count < bitTotal && !filterQueued);
+	rule filterRelay(butterState == FILTER && count < fromInteger(valueOf(datalen)) && !filterQueued);
 		Bit#(64) val = butterQ.first;
 		butterQ.deq;
 		filter.put(val);
 		count <= count + 1;
 	endrule
 	
-	rule startFilter(butterState == FILTER && count == bitTotal);
+	rule startFilter(butterState == FILTER && count == fromInteger(valueOf(datalen)));
 		$display("Filter Started. \n");
 		count <= 0;
 		filter.start;
@@ -78,10 +78,6 @@ module mkButterFilt(ButterFiltIfc);
 		return val;
 	endfunction
 	
-	method Action setTotal(Bit#(20) intTot);
-		bitTotal <= intTot;	
-	endmethod
-	
 	method Action put(Bit#(64) data);
 		butterQ.enq(data);
 	endmethod
@@ -89,8 +85,8 @@ module mkButterFilt(ButterFiltIfc);
 	method Action start;
 		$display( "Starting Butter Filter. \n");
 		butterState <= FILTER;
-		Vector#(5, Bit#(64)) butterVecA = genWith(loadButterA);
-		Vector#(5, Bit#(64)) butterVecB = genWith(loadButterB);
+		Vector#(FilterALen, Bit#(64)) butterVecA = genWith(loadButterA);
+		Vector#(FilterBLen, Bit#(64)) butterVecB = genWith(loadButterB);
 		filter.setCoeffVectors(butterVecA, butterVecB);
 	endmethod
 	

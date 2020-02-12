@@ -14,11 +14,14 @@ import BRAMFIFO::*;
 import Float32::*;
 import Float64::*;
 
+//`define STANDARDIZE_DEBUG
+
+typedef TLog#(len) CountLen#(numeric type len);
+
 typedef enum {INIT, SUM,AVERAGE,STANDARDIZE} StandardizeState deriving(Bits,Eq);
 
-interface StandardizeIfc;
+interface StandardizeIfc#(numeric type datalen);
 //INIT
-	method Action setTotal(Bit#(20) intTot, Bit#(64) dblTot);
 	method Action put(Bit#(64) data);
 	method Action start;
 	method Bool hasStd();
@@ -26,19 +29,19 @@ interface StandardizeIfc;
 	method Action clear;
 endinterface
 
-module mkStandardize(StandardizeIfc);
-	SummateIfc summate <- mkSummate; 
+module mkStandardize(StandardizeIfc#(datalen));
+	SummateIfc#(datalen) summate <- mkSummate; 
 	
 	Reg#(StandardizeState) stdState <- mkReg(INIT);
 	
-	FIFOF#(Bit#(64)) stdQ1 <- mkSizedFIFOF(200000);
-	FIFOF#(Bit#(64)) stdQ2 <- mkSizedFIFOF(200000);
+	FIFOF#(Bit#(64)) stdQ1 <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
+	FIFOF#(Bit#(64)) stdQ2 <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
 	
-	FIFOF#(Bit#(64)) outQ <- mkSizedFIFOF(200000);
+	FIFOF#(Bit#(64)) outQ <- mkSizedFIFOF(fromInteger(valueOf(datalen)));
 	
-	Reg#(Bit#(20)) count <- mkReg(0);
+	Reg#(Bit#(CountLen#(datalen))) count <- mkReg(0);
 	
-	Reg#(Bit#(20)) bitTotal <- mkReg(200000);
+	//Reg#(Bit#(20)) bitTotal <- mkReg(fromInteger(valueOf(datalen)));
 	Reg#(Bit#(64)) dblTotal <- mkReg('b0100000100001000011010100000000000000000000000000000000000000000);
 	
 	Reg#(Bit#(64)) average <- mkReg(0);
@@ -54,14 +57,14 @@ module mkStandardize(StandardizeIfc);
 	FpPairIfc#(64) div <- mkFpDiv64(clocked_by curClk, reset_by curRst);
 	FpPairIfc#(64) sub <- mkFpSub64(clocked_by curClk, reset_by curRst);
 	
-	rule summateRelay(stdState == SUM && count < bitTotal);
+	rule summateRelay(stdState == SUM && count < fromInteger(valueOf(datalen)));
 		Bit#(64) val = stdQ1.first;
 		stdQ1.deq;
 		summate.put(val);
 		count <= count + 1;
 	endrule
 	
-	rule startSummate(stdState == SUM && count == bitTotal);
+	rule startSummate(stdState == SUM && count == fromInteger(valueOf(datalen)));
 		count <= 0;
 		summate.start;
 	endrule
@@ -69,30 +72,36 @@ module mkStandardize(StandardizeIfc);
 	rule startAverage(stdState ==  SUM && summate.hasSum());
 		Bit#(64) val = summate.getSum();
 		stdState <= AVERAGE;
-		//$display("Dividing. \n");
 		div.enq(val, dblTotal);
+`ifdef STANDARDIZE_DEBUG
+		$display("Dividing. %b / %b \n", val, dblTotal);
+`endif
 	endrule
 	
-	rule endAverage(stdState == AVERAGE);// && divFlag);
+	rule endAverage(stdState == AVERAGE);
 		Bit#(64) val = div.first;
 		div.deq;
-		//$display("Average Binary Value: %b \n", val);
 		stdState <= STANDARDIZE;
 		average <= val;
 		count <= 0;
+`ifdef STANDARDIZE_DEBUG
+		$display("Average Binary Value: %b \n", val);
+`endif
 	endrule
 	
 	rule startStd(stdState == STANDARDIZE && !subQueued);
-		if (count < bitTotal) begin
+		if (count < fromInteger(valueOf(datalen))) begin
 			Bit#(64) op = stdQ2.first;
 			stdQ2.deq;
 			sub.enq(op, average);
 			subQueued <= True;
 		end
-		if (count == bitTotal) begin
-			$display("Standardize Complete. \n");
+		if (count == fromInteger(valueOf(datalen))) begin
 			stdDone <= True;
 			stdState <= INIT;
+`ifdef BSIM
+			$display("Standardize Complete. \n");
+`endif
 		end
 	endrule
 	
@@ -100,17 +109,13 @@ module mkStandardize(StandardizeIfc);
 		Bit#(64) val = sub.first;
 		sub.deq;
 		outQ.enq(val);
-		//$display( "Standardized op no. %d", count);
-		//$display( "Standardized Binary Value: %b \n", val);
 		count <= count + 1;
 		subQueued <= False;
+`ifdef STANDARDIZE_DEBUG
+		$display( "Standardized op no. %d", count);
+		$display( "Standardized Binary Value: %b \n", val);
+`endif
 	endrule
-	
-	method Action setTotal(Bit#(20) intTot, Bit#(64) dblTot);
-		bitTotal <= intTot;
-		dblTotal <= dblTot;
-		summate.setTotal(intTot);
-	endmethod
 	
 	method Action put(Bit#(64) data);
 		stdQ1.enq(data);
@@ -118,7 +123,9 @@ module mkStandardize(StandardizeIfc);
 	endmethod
 	
 	method Action start;
+`ifdef BSIM
 		$display( "Starting Standardize. \n");
+`endif
 		stdState <= SUM;
 	endmethod
 	
@@ -133,8 +140,6 @@ module mkStandardize(StandardizeIfc);
 		stdQ2.clear();
 		outQ.clear();
 		count <= 0;
-		bitTotal <= 200000;
-		dblTotal <= 'b0100000100001000011010100000000000000000000000000000000000000000;
 		divFlag <= False;
 		average <= 0;
 		subQueued <= False;
@@ -147,3 +152,5 @@ module mkStandardize(StandardizeIfc);
     endmethod
 	
 endmodule:mkStandardize
+
+

@@ -10,6 +10,8 @@
 
 static size_t sgolaysize = 33*33;
 static size_t readsize = 4*200000; // 8 images
+static size_t timesize = 30001;
+static size_t axissize = 200000;
 
 class BdpiState{
 public:
@@ -42,6 +44,13 @@ public:
 		return axisbuffer + axisoffset;
 	}
 	
+	void timeadvance(size_t inc) {
+		timeoffset += inc;
+	}
+	double* time1() {
+		return timebuffer + timeoffset;
+	}
+	
 	size_t offset(){
 		return readoffset;
 	}
@@ -55,15 +64,22 @@ private:
 	size_t sgolayoffset = 0;
 	size_t sgolaybuffersize = 0;
 
-//axis_fin
+//axis
 	double* axisbuffer = NULL;
 	size_t axisoffset = 0;
-	size_t axissize = 0;
+	size_t axisbuffersize = 0;
+//time
+	double* timebuffer = NULL;
+	size_t timeoffset = 0;
+	size_t timebuffersize = 0;
+
 //load_data
 	double* inbuffer = NULL;
 	size_t readoffset = 0;
 	size_t buffersize = 0;
 
+
+	
 	std::mutex mutex;
 
 };
@@ -73,14 +89,20 @@ BdpiState::BdpiState() {
 	FILE* sgolay_fin = fopen("sgolay.bin", "rb");
 	sgolaybuffer = (double*)malloc(sizeof(double)*sgolaysize);
 	size_t sgolay_r = fread(sgolaybuffer, sizeof(double), sgolaysize, sgolay_fin);
-	sgolaysize = sgolay_r;
-	printf( "Simulator read %ld entries of 1,089 Sgolay weights \n", sgolaysize );
+	sgolaybuffersize = sgolay_r;
+	printf( "Simulator read %ld entries of 1,089 Sgolay weights \n", sgolaybuffersize );
 	
 	FILE* axis_fin = fopen("00_axis_time.bin", "rb");
 	axisbuffer = (double*)malloc(sizeof(double)* readsize/4);
 	size_t axis_r = fread(axisbuffer, sizeof(double), axissize, axis_fin);
-	axissize = axis_r;
-	printf( "Simulator read %ld entries of 1,089 Sgolay weights \n", sgolaysize );
+	axisbuffersize = axis_r;
+	printf( "Simulator read %ld entries of 200,000 Axis points \n", axisbuffersize );
+	
+	FILE* time_fin = fopen("01_even_time.bin", "rb");
+	timebuffer = (double*)malloc(sizeof(double)* readsize/4);
+	size_t time_r = fread(timebuffer, sizeof(double), timesize, time_fin);
+	timebuffersize = time_r;
+	printf( "Simulator read %ld entries of 30,001 Time points \n", timebuffersize );
 	
 	FILE* fin = fopen("00_data.bin", "rb");
 	fseek(fin , 0 , SEEK_END);
@@ -89,10 +111,6 @@ BdpiState::BdpiState() {
 	inbuffer = (double*)malloc(sizeof(double)* readsize);
 	size_t r = fread(inbuffer, sizeof(double), readsize, fin);
 	buffersize = r;
-	
-
-	
-	
 	printf( "Simulator read %ld entries of test intput\n", buffersize );
 	printf( "Simulator read %ld bytes of file\n", lSize );
 }
@@ -140,6 +158,21 @@ extern "C" uint64_t read_sgolay() {
 	uint64_t value = *(uint64_t*)bdpi->sgolay1();
 	return value;
 }
+
+extern "C" void advance_time() {
+	BdpiState* bdpi = BdpiState::getInstance();
+	bdpi->timeadvance(1);
+	//bdpi->advance(4);
+}
+
+
+extern "C" uint64_t read_time() {
+	BdpiState* bdpi = BdpiState::getInstance();
+	uint64_t value = *(uint64_t*)bdpi->time1();
+	return value;
+}
+
+
 
 extern "C" void advance_axis() {
 	BdpiState* bdpi = BdpiState::getInstance();
